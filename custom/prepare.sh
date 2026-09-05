@@ -5,6 +5,8 @@ printf '%s\n' 'src-git istore https://github.com/linkease/istore.git;main' 'src-
 ./scripts/feeds update -a
 # Exclude the optional speed-test package family whose Kconfig is recursive.
 rm -rf feeds/nas_packages/utils/librespeed-cli feeds/nas_packages/utils/librespeed-cli-rust feeds/nas_packages/utils/librespeed-common
+rm -rf package/feeds/nas_packages/librespeed-cli package/feeds/nas_packages/librespeed-cli-rust package/feeds/nas_packages/librespeed-common
+rm -rf tmp
 ./scripts/feeds install -a
 ./scripts/feeds install -d y -p istore luci-app-store
 ./scripts/feeds install -d y -p nas_packages quickstart
@@ -43,7 +45,7 @@ cp -a work-sources/pw2/luci-app-passwall2 package/
 cp -a work-sources/homeproxy package/luci-app-homeproxy
 cp -a work-sources/clash/luci-app-openclash package/
 cp -a work-sources/argon package/luci-theme-argon
-sed -i 's/+wget-any/+wget-ssl/g' package/luci-theme-argon/Makefile
+sed -i -E 's/\+wget(-ssl)?/\+wget/g; s/\+wget-any/\+wget/g' package/luci-theme-argon/Makefile
 cp -a work-sources/lean/applications/luci-app-nps package/
 cp -a work-sources/nps/npc package/
 sed -i 's#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#' package/luci-app-nps/Makefile
