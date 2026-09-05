@@ -3,29 +3,34 @@ set -euo pipefail
 mkdir -p work-sources
 printf '%s\n' 'src-git istore https://github.com/linkease/istore.git;main' 'src-git nas_packages https://github.com/linkease/nas-packages.git;master' 'src-git nas_luci https://github.com/linkease/nas-packages-luci.git;main' >> feeds.conf.default
 ./scripts/feeds update -a
+# Exclude the optional speed-test package family whose Kconfig is recursive.
+rm -rf feeds/nas_packages/utils/librespeed-cli feeds/nas_packages/utils/librespeed-cli-rust feeds/nas_packages/utils/librespeed-common
 ./scripts/feeds install -a
-git clone --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall.git work-sources/pw
+./scripts/feeds install -d y -p istore luci-app-store
+./scripts/feeds install -d y -p nas_packages quickstart
+./scripts/feeds install -d y -p nas_luci luci-app-quickstart
+git clone --filter=blob:none --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall.git work-sources/pw
 git -C work-sources/pw checkout --detach 6c45f659251fd91ac0e414db94710288ab9cda61
 echo 'Openwrt-Passwall/openwrt-passwall 6c45f659251fd91ac0e414db94710288ab9cda61' >> source-lock.txt
-git clone --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall2.git work-sources/pw2
+git clone --filter=blob:none --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall2.git work-sources/pw2
 git -C work-sources/pw2 checkout --detach c613dc317bec3e3bf6ac920177fbe1e69495d1c8
 echo 'Openwrt-Passwall/openwrt-passwall2 c613dc317bec3e3bf6ac920177fbe1e69495d1c8' >> source-lock.txt
-git clone --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git work-sources/proxy
+git clone --filter=blob:none --no-checkout https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git work-sources/proxy
 git -C work-sources/proxy checkout --detach 3e11c458c552aefd348232c627fd1ed9f8f08e41
 echo 'Openwrt-Passwall/openwrt-passwall-packages 3e11c458c552aefd348232c627fd1ed9f8f08e41' >> source-lock.txt
-git clone --no-checkout https://github.com/immortalwrt/homeproxy.git work-sources/homeproxy
+git clone --filter=blob:none --no-checkout https://github.com/immortalwrt/homeproxy.git work-sources/homeproxy
 git -C work-sources/homeproxy checkout --detach edece28a0085f36d469ec82c8d45f562f602db53
 echo 'immortalwrt/homeproxy edece28a0085f36d469ec82c8d45f562f602db53' >> source-lock.txt
-git clone --no-checkout https://github.com/vernesong/OpenClash.git work-sources/clash
+git clone --filter=blob:none --no-checkout https://github.com/vernesong/OpenClash.git work-sources/clash
 git -C work-sources/clash checkout --detach c3a33c1d3407956fdf8f0e0b7c1a4c52e6ad9593
 echo 'vernesong/OpenClash c3a33c1d3407956fdf8f0e0b7c1a4c52e6ad9593' >> source-lock.txt
-git clone --no-checkout https://github.com/jerrykuku/luci-theme-argon.git work-sources/argon
+git clone --filter=blob:none --no-checkout https://github.com/jerrykuku/luci-theme-argon.git work-sources/argon
 git -C work-sources/argon checkout --detach ddefe5f05ca334dba10d2d65d25ebf14e986ee88
 echo 'jerrykuku/luci-theme-argon ddefe5f05ca334dba10d2d65d25ebf14e986ee88' >> source-lock.txt
-git clone --no-checkout https://github.com/coolsnowwolf/luci.git work-sources/lean
+git clone --filter=blob:none --no-checkout https://github.com/coolsnowwolf/luci.git work-sources/lean
 git -C work-sources/lean checkout --detach 3af75fcd74bac12e771e788ea41994f9b57e20cd
 echo 'coolsnowwolf/luci 3af75fcd74bac12e771e788ea41994f9b57e20cd' >> source-lock.txt
-git clone --no-checkout https://github.com/djylb/nps-openwrt.git work-sources/nps
+git clone --filter=blob:none --no-checkout https://github.com/djylb/nps-openwrt.git work-sources/nps
 git -C work-sources/nps checkout --detach 480f2e502575641a0c9280d6fad971550621316d
 echo 'djylb/nps-openwrt 480f2e502575641a0c9280d6fad971550621316d' >> source-lock.txt
 
@@ -38,6 +43,7 @@ cp -a work-sources/pw2/luci-app-passwall2 package/
 cp -a work-sources/homeproxy package/luci-app-homeproxy
 cp -a work-sources/clash/luci-app-openclash package/
 cp -a work-sources/argon package/luci-theme-argon
+sed -i 's/+wget-any/+wget-ssl/g' package/luci-theme-argon/Makefile
 cp -a work-sources/lean/applications/luci-app-nps package/
 cp -a work-sources/nps/npc package/
 sed -i 's#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#' package/luci-app-nps/Makefile
@@ -89,7 +95,9 @@ CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox=y
 CONFIG_PACKAGE_sing-box=y
 CONFIG_PACKAGE_xray-core=y
 CONFIG
-make defconfig
+make defconfig 2>&1 | tee config-resolve.log
+! grep -q 'recursive dependency detected' config-resolve.log
+./scripts/diffconfig.sh > hy3000.config
 for pkg in luci-app-store luci-app-quickstart quickstart luci-app-ttyd luci-theme-argon luci-app-passwall luci-app-passwall2 luci-app-homeproxy luci-app-openclash luci-app-nps npc kmod-mt7915e sing-box xray-core; do
   grep -qx "CONFIG_PACKAGE_$pkg=y" .config || { echo "Required package dropped: $pkg"; exit 1; }
 done
