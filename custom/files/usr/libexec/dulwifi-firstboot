@@ -1,0 +1,63 @@
+#!/bin/sh
+. /lib/functions.sh
+[ -f /etc/dulwifi-firstboot.done ] && exit 0
+valid_mac() {
+  echo "$1" | grep -Eq '^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$' || return 1
+  [ "$1" != '00:00:00:00:00:00' ] && [ "$1" != 'ff:ff:ff:ff:ff:ff' ]
+}
+set_ssid() {
+  local iface="$1" dev band
+  config_get dev "$iface" device
+  config_get band "$dev" band
+  [ -n "$band" ] || config_get band "$dev" hwmode
+  case "$band" in
+    2g|11g|11b) ssid='DulWiFi-2.4G'; found2=1 ;;
+    5g|11a) ssid='DulWiFi-5G'; found5=1 ;;
+    *) return ;;
+  esac
+  uci set wireless."$dev".disabled='0'
+  uci set wireless."$iface".disabled='0'
+  uci set wireless."$iface".ssid="$ssid"
+  uci set wireless."$iface".encryption='psk2'
+  uci set wireless."$iface".key='password'
+}
+tries=0
+while [ "$tries" -lt 90 ]; do
+  /sbin/wifi config >/dev/null 2>&1
+  found2=0; found5=0
+  config_load wireless
+  config_foreach set_ssid wifi-iface
+  mac=''
+  # Prefer the physical WAN device, not a PPP interface.
+  dev="$(uci -q get network.wan.device)"
+  [ -n "$dev" ] || dev="$(ubus call network.interface.wan status 2>/dev/null | jsonfilter -e '@.device')"
+  if [ -n "$dev" ] && [ -r "/sys/class/net/$dev/address" ]; then
+    mac="$(cat "/sys/class/net/$dev/address")"
+  fi
+  valid_mac "$mac" || mac="$(uci -q get network.wan.macaddr)"
+  if valid_mac "$mac" && [ "$found2" = 1 ] && [ "$found5" = 1 ]; then
+    key="$(printf '%s' "$mac" | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+    uci -q get nps.@nps[0] >/dev/null || uci add nps nps >/dev/null
+    uci set nps.@nps[0].enabled='1'
+    uci set nps.@nps[0].server_addr='47.83.9.208'
+    uci set nps.@nps[0].server_port='8024'
+    uci set nps.@nps[0].protocol='tcp'
+    uci set nps.@nps[0].compress='0'
+    uci set nps.@nps[0].crypt='0'
+    uci set nps.@nps[0].log_level='4'
+    uci set nps.@nps[0].vkey="$key"
+    uci commit nps || exit 1
+    uci commit wireless || exit 1
+    mkdir -p /tmp/etc
+    /etc/init.d/nps enable
+    /etc/init.d/nps restart
+    /sbin/wifi reload
+    touch /etc/dulwifi-firstboot.done
+    /etc/init.d/dulwifi-firstboot disable
+    exit 0
+  fi
+  tries=$((tries + 1))
+  sleep 2
+done
+logger -t dulwifi 'First boot configuration incomplete: WAN MAC or both Wi-Fi radios unavailable; will retry'
+exit 1
